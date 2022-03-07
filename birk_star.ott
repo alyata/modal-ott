@@ -1,0 +1,101 @@
+metavar termvar, x ::= {{ coq nat }} {{ coq-equality }}
+ 
+metavar typvar, A ::= {{ coq nat }} {{ coq-equality }}
+
+indexvar index, i, j, n, m ::= {{ coq nat }}
+
+grammar
+terminals :: 'terminals_' ::=
+  | \                   ::   :: lambda     {{ tex \lambda }}
+  | -->                 ::   :: reduce     {{ tex \Longrightarrow }}
+  |  ->                 ::   :: arrow      {{ tex \rightarrow }}
+  | |-                  ::   :: turnstile  {{ tex \vdash }}
+  | in                  ::   :: in         {{ tex \in }}
+  | lock                ::   :: lock
+
+term, t :: 't_' ::=
+  | x            ::  :: Var
+  | \ x . t      ::  :: Lam (+ bind x in t +) 
+  | t t'         ::  :: App
+  | shut t       ::  :: Shut
+  | open t       ::  :: Open
+  | ( t )        :: S:: Par {{ icho [[t]] }}
+  | t1 [t2 / x]  :: M:: Sub {{ icho (tsubst_t [[t2]] [[x]] [[t1]]) }}
+
+types, T :: 'T_' ::=
+  | A              ::  :: Var
+  | pi x : T1 , T2 ::  :: Fun
+  | box T          ::  :: Box
+  | ( T )          :: S:: Par {{ icho [[T]] }}
+
+context, C {{ tex \Gamma }} :: 'C_' ::=
+{{ coq (list (option (termvar*types))) }}
+  | empty        ::  :: Emp {{ coq C_nil }}
+  | C , x : T    ::  :: ConsVar {{ coq (cons (Some ([[x]], [[T]])) [[C]]) }}
+  | C , lock     ::  :: ConsLock {{ coq (cons Lock [[C]]) }}
+  | unlock C     :: S:: Unlock {{ coq (C_unlock [[C]]) }}
+
+formula :: 'formula_' ::=
+  | judgement  ::  :: judgement
+  | x : T in C ::  :: in {{ coq (C_in [[x]] [[T]] [[C]]) }}
+
+embed
+{{ coq
+Notation Lock := None.
+Notation C_nil := (@nil (option (termvar*types))).
+Definition C_in (x : termvar) (T : types) (C : context) :=
+  exists C1, exists C2,
+    (C = List.app C1 (List.cons (Some (x,T)) C2)) /\
+    (~ exists T', In (Some (x, T')) C1) /\
+    (~ In Lock C1).
+Definition bool_from_option {A : Type} (o : option A) :=
+  match o with
+  | None   => false
+  | Some _ => true
+  end.
+Definition C_unlock (C : context) := filter bool_from_option C.
+}}
+
+substitutions
+    single t x :: tsubst
+
+defns
+Infer :: '' ::=
+
+defn C |- T type ::  ::type_form::'' by
+  ----------- :: type_var
+  C |- A type
+
+  C |- T1 type
+  C , x : T1 |- T2 type
+  ----------------------- :: pi_form
+  C |- pi x : T1, T2 type
+
+  C, lock |- T type
+  ----------------- :: box_form
+  C |- box T type
+
+defn C |- t : T ::  ::type_of_term::'' by
+  x : T in C
+  ---------- :: term_var
+  C |- x : T
+
+  C |- pi x : T1, T2 type
+  C , x : T1 |- t : T2
+  ------------------------- :: pi_intro
+  C |- \x.t : pi x : T1, T2
+
+  C |- t1 : pi x : T1, T2 
+  C |- t2 : T1
+  ----------------------- :: pi_elim
+  C |- t1 t2 : T2
+
+  C |- box T type
+  C, lock |- t : T
+  ------------------- :: box_intro
+  C |- shut t : box T
+
+  C |- T type
+  unlock C |- t : box T
+  --------------------- :: box_elim
+  C |- open t : T
