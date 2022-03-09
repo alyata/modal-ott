@@ -10,9 +10,7 @@ embed
 % natural numbers in Coq
 metavar termvar, x, y ::= {{ coq nat }} {{ coq-equality }}
 
-metavar typevar, a, b ::= {{ coq nat }} {{ coq-equality }}
-
-indexvar index, i, j, n, m, z, s ::= {{ coq nat }}
+indexvar index, i, j, k, z, s ::= {{ coq nat }}
 
 % BEGIN: grammar definitions
 grammar
@@ -30,48 +28,57 @@ terminals :: 'terminals_' ::=
   | box                 ::   :: box        {{ tex \square }}
   | nat                 ::   :: nat        {{ tex \mathbb{N} }}
 
+n :: 'n_' ::=
+{{ coq (nat) }}
+  | 0                   ::   :: zero {{ coq 0 }}
+  | s n                 ::   :: succ {{ tex [[n]] + 1 }}
+                                     {{ coq (S [[n]]) }}
+
 term, t :: 't_' ::=
+  % constructions that are properly 'term'
   | x              ::  :: Var    {{ com variables }}
   | zero           ::  :: Zero   {{ com natural number 0 }}
   | succ t         ::  :: Succ   {{ com successor of natural number t }}
-  | rec T tn tz ts ::  :: Rec    {{ com (dependent) recursor for natural 
+  | rec t tk tz ts ::  :: Rec    {{ com (dependent) recursor for natural 
                                     numbers }}
-  | \ x . t        ::  :: Lam    (+ bind x in t +) 
+  | \ x : t , t'   ::  :: Lam    (+ bind x in t' +) 
                                  {{ com lambda abstraction}}
   | t t'           ::  :: App    {{ com function application }}
   | quote t        ::  :: Quote  {{ com quote term t as code }}
                                  {{ tex [ [[t]] ]_{\text{\faLock} } }}
   | splice t       ::  :: Splice {{ com splice code t as term }}
                                  {{ tex [ [[t]] ]_{\text{\faUnlock} } }}
+  % type constructions
+  | nat            ::  :: Nat    {{ com natural number type }}
+  | pi x : t , t'  ::  :: Fun    (+ bind x in t' +)
+                                 {{ com dependent function type }}
+  | box t          ::  :: Box    {{ com terms of $[[t]]$ as code }}
+  | univ n         ::  :: Univ   {{ com type universe }}
+                                 {{ tex \mathcal{U}_{[[n]]} }}
+  % sugaring and substitution
   | ( t )          :: S:: Par    {{ coq [[t]] }}
   | t1 [ t2 / x ]  :: M:: Sub    {{ coq (subst_term_in_term [[t2]] [[x]] [[t1]])}}
 
-type, T :: 'T_' ::=
-  | nat            ::  :: Nat {{ com natural numbers }}
-  | pi x : T , T'  ::  :: Fun (+ bind x in T' +)
-                              {{ com dependent function types }}
-  | box T          ::  :: Box {{ com terms of A as code }}
-  | ( T )          :: S:: Par {{ coq [[T]] }}
-  | T [ t / x ]    :: M:: Sub {{ coq (subst_term_in_type [[t]] [[x]] [[T]]) }}
-
 context, C {{ tex \Gamma }} :: 'C_' ::=
-{{ coq (list (option (termvar*type))) }}
+{{ coq (list (option (termvar*term))) }}
   | empty        ::  :: Emp      {{ coq C_nil }}
-  | C , x : T    ::  :: ConsVar  {{ coq (cons (C_var ([[x]], [[T]])) [[C]]) }}
+  | C , x : t    ::  :: ConsVar  {{ coq (cons (C_var ([[x]], [[t]])) [[C]]) }}
   | C , lock     ::  :: ConsLock {{ coq (cons C_lock [[C]]) }}
-  | unlock C     :: S:: Unlock   {{ coq (C_unlock [[C]]) }} 
+  | unlock C     :: M:: Unlock   {{ coq (C_unlock [[C]]) }} 
                                  {{ tex {[[C]]}^{ \text{\faUnlock} } }}
 
 formula :: 'formula_' ::=
   | judgement  ::  :: judgement
-  | x : T in C ::  :: in {{ coq (C_in [[x]] [[T]] [[C]]) }}
+  | x : t in C ::  :: in {{ coq (C_in [[x]] [[t]] [[C]]) }}
+                         {{ tex \Gamma = \Gamma_1, [[x]] : [[t]], \Gamma_2 
+                            \text{ and } \text{\faLock} \not\in \Gamma_2 }}
 
 embed
 {{ coq
 Notation C_var := Some.
 Notation C_lock := None.
-Notation C_nil := (@nil (option (termvar*type))).
-Definition C_in (x : termvar) (T : type) (C : context) :=
+Notation C_nil := (@nil (option (termvar*term))).
+Definition C_in (x : termvar) (T : term) (C : context) :=
   exists C1, exists C2,
     (C = List.app C1 (List.cons (Some (x,T)) C2)) /\
     (~ exists T', In (Some (x, T')) C1) /\
@@ -89,17 +96,6 @@ Definition C_unlock (C : context) := filter is_var C.
 substitutions
   single t x :: subst_term_in%_term
 
-embed
-{{ coq
-(* For now substituting term in type does nothing since we have no actually
-dependent type yet, e.g. propositional equality *)
-Fixpoint subst_term_in_type (t:term) (x:termvar) (T:type) {struct T} : type :=
-  match T with
-  | T_Nat => T_Nat
-  | (T_Fun y T1 T2) => T_Fun y T1 (if list_mem eq_termvar x (cons y nil) then T else subst_term_in_type t x T2)
-  | (T_Box T1) => T_Box (subst_term_in_type t x T1)
-end.
-}}
 % END: substitutions
 
 % BEGIN: judgement definitions - typing, reduction etc.
@@ -112,33 +108,39 @@ defn C ctx ::  ::ctx_form::''
   --------- :: ctx_emp
   empty ctx
 
-  C ctx
-  C |- T
-  ---------- :: ctx_var
-  C, x:T ctx
+  % don't need C ctx as C |- t : univ n implicitly carries the fact that C is 
+  % well-formed
+  C |- t : univ n
+  --------------- :: ctx_var
+  C, x:t ctx
 
   C ctx
   ----------- :: ctx_lock
   C, lock ctx
 
-defn C |- T ::  ::type_form::''
-{{ com $[[T]]$ is a well-formed type under context $[[C]]$ }} by
+defn C |- t1 : t2 ::  ::type_of_term::''
+{{ com $[[t1]]$ has type $[[t2]]$ under context $[[C]]$ }} by
 
   C ctx
-  ------------- :: nat_form
-  C |- nat
+  ----------------------- :: univ_form
+  C |- univ n : univ s n
 
-  C |- T1
-  C , x : T1 |- T2
-  ----------------------- :: pi_form
-  C |- pi x : T1, T2
+  C ctx
+  ----------------- :: nat_form
+  C |- nat : univ n
 
-  C, lock |- T
-  ----------------- :: box_form
-  C |- box T
+  C |- t : univ n
+  C , x : t |- t' : univ n
+  --------------------------- :: pi_form
+  C |- pi x : t, t' : univ n
 
-defn C |- t : T ::  ::type_of_term::''
-{{ com $[[t]]$ has type $[[T]]$ under context $[[C]]$ }} by
+  C, lock |- t : univ n
+  --------------------- :: box_form
+  C |- box t : univ n
+
+  C |- t : univ n
+  ------------------ :: univ_cumul
+  C |- t : univ s n
 
   C ctx
   --------------- :: nat_zero
@@ -148,35 +150,35 @@ defn C |- t : T ::  ::type_of_term::''
   ----------------- :: nat_succ
   C |- succ t : nat
 
-  C, x : nat |- T
-  C |- t1 : nat
-  C |- t2 : T [zero / x]
-  C, x : nat, y : T |- t3 : T[succ x / x]
-  --------------------------------------- :: nat_rec
-  C |- rec T t1 t2 t3 : T[t1 / x]
+  C, x : nat |- t : univ n
+  C |- tk : nat
+  C |- tz : t [zero / x]
+  C, x : nat, y : t |- ts : t [succ x / x]
+  ---------------------------------------- :: nat_elim
+  C |- rec t tk tz ts : t[t1 / x]
 
   C ctx
-  x : T in C
+  x : t in C
   ---------- :: term_var
-  C |- x : T
+  C |- x : t
 
-  C |- T1
-  C, x : T1 |- t : T2
-  ------------------------- :: pi_intro
-  C |- \x.t : pi x : T1, T2
+  C |- t : univ n
+  C, x : t |- t1 : t'
+  ------------------------------ :: pi_intro
+  C |- \x : t, t1 : pi x : t, t'
 
-  C |- t2 : pi x : T1, T2 
-  C |- t1 : T1
-  C, x : T1 |- T2
+  C, x : t |- t' : univ n 
+  C |- t2 : pi x : t, t'
+  C |- t1 : t
   ----------------------- :: pi_elim
-  C |- t2 t1 : T2
+  C |- t2 t1 : t'
 
-  C, lock |- t : T
-  ------------------- :: box_intro
-  C |- quote t : box T
+  C, lock |- t1 : t
+  --------------------- :: box_intro
+  C |- quote t1 : box t
 
-  C |- T
-  unlock C |- t : box T
-  --------------------- :: box_elim
-  C |- splice t : T
+  C |- t : univ n
+  unlock C |- t1 : box t
+  ---------------------- :: box_elim
+  C |- splice t1 : t
 % END: judgement definitions

@@ -12,16 +12,18 @@ Definition x' := 0.
 Definition y' := 1.
 Definition z' := 2.
 
+Check S 0.
+
 (* Let A B C represent arbitrary well-formed types. *)
-Context {A B C : type}.
-Context (hA : forall ctx, type_form ctx A).
-Context (hB : forall ctx, type_form ctx B).
-Context (hC : forall ctx, type_form ctx C).
+Context {A B C : term}.
+Context (hA : forall ctx n, type_of_term ctx A (t_Univ n)).
+Context (hB : forall ctx n, type_of_term ctx B (t_Univ n)).
+Context (hC : forall ctx n, type_of_term ctx C (t_Univ n)).
 
 Lemma example_typing: type_of_term [Some (x', A)] x A.
 Proof.
 apply term_var.
-{ apply ctx_var. apply ctx_emp. apply hA.
+{ apply (ctx_var _ _ _ 0). apply hA.
 }
 unfold C_in.
 exists C_nil.
@@ -35,14 +37,14 @@ split.
 Qed.
 
 Lemma example_typing2: type_of_term [] 
-  (t_Lam x' (t_Lam y' (t_Var y'))) (T_Fun x' A (T_Fun y' B B)).
+  (t_Lam x' A (t_Lam y' B (t_Var y'))) (t_Fun x' A (t_Fun y' B B)).
 Proof.
-apply pi_intro.
+apply (pi_intro _ _ _ _ _ 0).
 apply hA.
-apply pi_intro.
+apply (pi_intro _ _ _ _ _ 0).
 apply hB.
 apply term_var.
-{ apply ctx_var. apply ctx_var. apply ctx_emp. apply hA. apply hB. }
+{ apply (ctx_var _ _ _ 0). apply hB. }
 unfold C_in.
 exists C_nil.
 exists [Some (x', A)].
@@ -54,17 +56,18 @@ split.
 { auto. }
 Qed.
 
-Lemma axiom_T: type_of_term [] (t_Lam x' (t_Open x)) (T_Fun x' (T_Box A) A).
+Lemma axiom_T: type_of_term [] (t_Lam x' (t_Box A) (t_Splice x)) 
+                               (t_Fun x' (t_Box A) A).
 Proof.
-apply pi_intro.
+apply (pi_intro _ _ _ _ _ 0).
 { apply box_form. apply hA. }
-apply box_elim.
+apply (box_elim _ _ _ 0).
 { apply hA. }
 apply term_var.
 unfold C_unlock.
 unfold C_in.
 simpl.
-{ apply ctx_var. apply ctx_emp. apply box_form. apply hA. }
+{ apply (ctx_var _ _ _ 0). apply box_form. apply hA. }
 exists C_nil.
 exists C_nil.
 split.
