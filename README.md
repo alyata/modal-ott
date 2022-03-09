@@ -25,8 +25,8 @@
 # Generate the LaTeX file from ott
 > ott -i birk_star.ott -o birk_star.tex
 
-# Compile LaTeX
-> pdflatex birk_star.tex
+# Compile using xeLaTeX to have fontawesome support
+> xelatex birk_star.tex
 
 # Clean the generated LaTeX compile files
 > latexmk -C

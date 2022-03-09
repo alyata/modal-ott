@@ -1,39 +1,66 @@
-metavar termvar, x ::= {{ coq nat }} {{ coq-equality }}
- 
-metavar typvar, A ::= {{ coq nat }} {{ coq-equality }}
+embed
+{{ tex-preamble
+\synctex=1
+\usepackage{fontspec}
+\usepackage{fontawesome5}
+\usepackage{cancel}
+}}
 
-indexvar index, i, j, n, m ::= {{ coq nat }}
+% term variables, represented by x in the grammar, are to be represented using
+% natural numbers in Coq
+metavar termvar, x, y ::= {{ coq nat }} {{ coq-equality }}
 
+metavar typevar, a, b ::= {{ coq nat }} {{ coq-equality }}
+
+indexvar index, i, j, n, m, z, s ::= {{ coq nat }}
+
+% BEGIN: grammar definitions
 grammar
+ 
 terminals :: 'terminals_' ::=
   | \                   ::   :: lambda     {{ tex \lambda }}
   | -->                 ::   :: reduce     {{ tex \Longrightarrow }}
-  |  ->                 ::   :: arrow      {{ tex \rightarrow }}
+  | ->                  ::   :: arrow      {{ tex \rightarrow }}
   | |-                  ::   :: turnstile  {{ tex \vdash }}
   | in                  ::   :: in         {{ tex \in }}
-  | lock                ::   :: lock
+  | lock                ::   :: lock       {{ tex \text{\faLock} }}
+  | empty               ::   :: empty      {{ tex \cdot }}
+  | ctx                 ::   :: ctx        {{ tex \textbf{ ctx} }}
+  | pi                  ::   :: pi         {{ tex \Pi }}
+  | box                 ::   :: box        {{ tex \square }}
+  | nat                 ::   :: nat        {{ tex \mathbb{N} }}
 
 term, t :: 't_' ::=
-  | x            ::  :: Var
-  | \ x . t      ::  :: Lam (+ bind x in t +) 
-  | t t'         ::  :: App
-  | shut t       ::  :: Shut
-  | open t       ::  :: Open
-  | ( t )        :: S:: Par {{ icho [[t]] }}
-  | t1 [t2 / x]  :: M:: Sub {{ icho (tsubst_t [[t2]] [[x]] [[t1]]) }}
+  | x              ::  :: Var    {{ com variables }}
+  | zero           ::  :: Zero   {{ com natural number 0 }}
+  | succ t         ::  :: Succ   {{ com successor of natural number t }}
+  | rec T tn tz ts ::  :: Rec    {{ com (dependent) recursor for natural 
+                                    numbers }}
+  | \ x . t        ::  :: Lam    (+ bind x in t +) 
+                                 {{ com lambda abstraction}}
+  | t t'           ::  :: App    {{ com function application }}
+  | quote t        ::  :: Quote  {{ com quote term t as code }}
+                                 {{ tex [ [[t]] ]_{\text{\faLock} } }}
+  | splice t       ::  :: Splice {{ com splice code t as term }}
+                                 {{ tex [ [[t]] ]_{\text{\faUnlock} } }}
+  | ( t )          :: S:: Par    {{ coq [[t]] }}
+  | t1 [ t2 / x ]  :: M:: Sub    {{ coq (subst_term_in_term [[t2]] [[x]] [[t1]])}}
 
-types, T :: 'T_' ::=
-  | A              ::  :: Var
-  | pi x : T1 , T2 ::  :: Fun
-  | box T          ::  :: Box
-  | ( T )          :: S:: Par {{ icho [[T]] }}
+type, T :: 'T_' ::=
+  | nat            ::  :: Nat {{ com natural numbers }}
+  | pi x : T , T'  ::  :: Fun (+ bind x in T' +)
+                              {{ com dependent function types }}
+  | box T          ::  :: Box {{ com terms of A as code }}
+  | ( T )          :: S:: Par {{ coq [[T]] }}
+  | T [ t / x ]    :: M:: Sub {{ coq (subst_term_in_type [[t]] [[x]] [[T]]) }}
 
 context, C {{ tex \Gamma }} :: 'C_' ::=
-{{ coq (list (option (termvar*types))) }}
-  | empty        ::  :: Emp {{ coq C_nil }}
-  | C , x : T    ::  :: ConsVar {{ coq (cons (Some ([[x]], [[T]])) [[C]]) }}
-  | C , lock     ::  :: ConsLock {{ coq (cons Lock [[C]]) }}
-  | unlock C     :: S:: Unlock {{ coq (C_unlock [[C]]) }}
+{{ coq (list (option (termvar*type))) }}
+  | empty        ::  :: Emp      {{ coq C_nil }}
+  | C , x : T    ::  :: ConsVar  {{ coq (cons (C_var ([[x]], [[T]])) [[C]]) }}
+  | C , lock     ::  :: ConsLock {{ coq (cons C_lock [[C]]) }}
+  | unlock C     :: S:: Unlock   {{ coq (C_unlock [[C]]) }} 
+                                 {{ tex {[[C]]}^{ \text{\faUnlock} } }}
 
 formula :: 'formula_' ::=
   | judgement  ::  :: judgement
@@ -41,61 +68,115 @@ formula :: 'formula_' ::=
 
 embed
 {{ coq
-Notation Lock := None.
-Notation C_nil := (@nil (option (termvar*types))).
-Definition C_in (x : termvar) (T : types) (C : context) :=
+Notation C_var := Some.
+Notation C_lock := None.
+Notation C_nil := (@nil (option (termvar*type))).
+Definition C_in (x : termvar) (T : type) (C : context) :=
   exists C1, exists C2,
     (C = List.app C1 (List.cons (Some (x,T)) C2)) /\
     (~ exists T', In (Some (x, T')) C1) /\
-    (~ In Lock C1).
-Definition bool_from_option {A : Type} (o : option A) :=
+    (~ In C_lock C1).
+Definition is_var {A : Type} (o : option A) :=
   match o with
-  | None   => false
-  | Some _ => true
+  | C_lock   => false
+  | C_var _  => true
   end.
-Definition C_unlock (C : context) := filter bool_from_option C.
+Definition C_unlock (C : context) := filter is_var C.
 }}
+% END: grammar definitions
 
+% BEGIN: substitutions
 substitutions
-    single t x :: tsubst
+  single t x :: subst_term_in%_term
 
+embed
+{{ coq
+(* For now substituting term in type does nothing since we have no actually
+dependent type yet, e.g. propositional equality *)
+Fixpoint subst_term_in_type (t:term) (x:termvar) (T:type) {struct T} : type :=
+  match T with
+  | T_Nat => T_Nat
+  | (T_Fun y T1 T2) => T_Fun y T1 (if list_mem eq_termvar x (cons y nil) then T else subst_term_in_type t x T2)
+  | (T_Box T1) => T_Box (subst_term_in_type t x T1)
+end.
+}}
+% END: substitutions
+
+% BEGIN: judgement definitions - typing, reduction etc.
 defns
 Infer :: '' ::=
 
-defn C |- T type ::  ::type_form::'' by
-  ----------- :: type_var
-  C |- A type
+defn C ctx ::  ::ctx_form::''
+{{ com $[[C]]$ is a well-formed context }} by
 
-  C |- T1 type
-  C , x : T1 |- T2 type
+  --------- :: ctx_emp
+  empty ctx
+
+  C ctx
+  C |- T
+  ---------- :: ctx_var
+  C, x:T ctx
+
+  C ctx
+  ----------- :: ctx_lock
+  C, lock ctx
+
+defn C |- T ::  ::type_form::''
+{{ com $[[T]]$ is a well-formed type under context $[[C]]$ }} by
+
+  C ctx
+  ------------- :: nat_form
+  C |- nat
+
+  C |- T1
+  C , x : T1 |- T2
   ----------------------- :: pi_form
-  C |- pi x : T1, T2 type
+  C |- pi x : T1, T2
 
-  C, lock |- T type
+  C, lock |- T
   ----------------- :: box_form
-  C |- box T type
+  C |- box T
 
-defn C |- t : T ::  ::type_of_term::'' by
+defn C |- t : T ::  ::type_of_term::''
+{{ com $[[t]]$ has type $[[T]]$ under context $[[C]]$ }} by
+
+  C ctx
+  --------------- :: nat_zero
+  C |- zero : nat
+
+  C |- t : nat
+  ----------------- :: nat_succ
+  C |- succ t : nat
+
+  C, x : nat |- T
+  C |- t1 : nat
+  C |- t2 : T [zero / x]
+  C, x : nat, y : T |- t3 : T[succ x / x]
+  --------------------------------------- :: nat_rec
+  C |- rec T t1 t2 t3 : T[t1 / x]
+
+  C ctx
   x : T in C
   ---------- :: term_var
   C |- x : T
 
-  C |- pi x : T1, T2 type
-  C , x : T1 |- t : T2
+  C |- T1
+  C, x : T1 |- t : T2
   ------------------------- :: pi_intro
   C |- \x.t : pi x : T1, T2
 
-  C |- t1 : pi x : T1, T2 
-  C |- t2 : T1
+  C |- t2 : pi x : T1, T2 
+  C |- t1 : T1
+  C, x : T1 |- T2
   ----------------------- :: pi_elim
-  C |- t1 t2 : T2
+  C |- t2 t1 : T2
 
-  C |- box T type
   C, lock |- t : T
   ------------------- :: box_intro
-  C |- shut t : box T
+  C |- quote t : box T
 
-  C |- T type
+  C |- T
   unlock C |- t : box T
   --------------------- :: box_elim
-  C |- open t : T
+  C |- splice t : T
+% END: judgement definitions
