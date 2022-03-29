@@ -10,7 +10,7 @@ embed
 % natural numbers in Coq
 metavar termvar, x, y ::= {{ coq nat }} {{ coq-equality }}
 
-indexvar index, i, j, k, z, s ::= {{ coq nat }}
+indexvar index, k, z, s ::= {{ coq nat }}
 
 % BEGIN: grammar definitions
 grammar
@@ -27,12 +27,14 @@ terminals :: 'terminals_' ::=
   | pi                  ::   :: pi         {{ tex \Pi }}
   | box                 ::   :: box        {{ tex \square }}
   | nat                 ::   :: nat        {{ tex \mathbb{N} }}
+  | beta                ::   :: beta       {{ tex \beta }}
+  | gamma               ::   :: gamma      {{ tex \gamma }}
 
-n :: 'n_' ::=
+i :: 'nat_' ::=
 {{ coq (nat) }}
   | 0                   ::   :: zero {{ coq 0 }}
-  | s n                 ::   :: succ {{ tex [[n]] + 1 }}
-                                     {{ coq (S [[n]]) }}
+  | s i                 ::   :: succ {{ tex [[i]] + 1 }}
+                                     {{ coq (S [[i]]) }}
 
 term, t :: 't_' ::=
   % constructions that are properly 'term'
@@ -44,7 +46,7 @@ term, t :: 't_' ::=
   | \ x : t , t'   ::  :: Lam    (+ bind x in t' +) 
                                  {{ com lambda abstraction}}
   | t t'           ::  :: App    {{ com function application }}
-  | quote t        ::  :: Quote  {{ com quote term t as code }}
+  | quote t        ::  :: Quote  {{ com quote term $[[t]]$ as code }}
                                  {{ tex [ [[t]] ]_{\text{\faLock} } }}
   | splice t       ::  :: Splice {{ com splice code t as term }}
                                  {{ tex [ [[t]] ]_{\text{\faUnlock} } }}
@@ -53,8 +55,8 @@ term, t :: 't_' ::=
   | pi x : t , t'  ::  :: Fun    (+ bind x in t' +)
                                  {{ com dependent function type }}
   | box t          ::  :: Box    {{ com terms of $[[t]]$ as code }}
-  | univ n         ::  :: Univ   {{ com type universe }}
-                                 {{ tex \mathcal{U}_{[[n]]} }}
+  | univ i         ::  :: Univ   {{ com type universe }}
+                                 {{ tex \mathcal{U}_{[[i]]} }}
   % sugaring and substitution
   | ( t )          :: S:: Par    {{ coq [[t]] }}
   | t1 [ t2 / x ]  :: M:: Sub    {{ coq (subst_term_in_term [[t2]] [[x]] [[t1]])}}
@@ -66,6 +68,31 @@ context, C {{ tex \Gamma }} :: 'C_' ::=
   | C , lock     ::  :: ConsLock {{ coq (cons C_lock [[C]]) }}
   | unlock C     :: M:: Unlock   {{ coq (C_unlock [[C]]) }} 
                                  {{ tex {[[C]]}^{ \text{\faUnlock} } }}
+
+reduction_strat, R :: 'R_' ::=
+  | beta     ::  :: Beta
+  | gamma    ::  :: Gamma
+
+value, e :: 'val_' ::=
+  | quote p        ::  :: Quote  {{ tex [ [[p]] ]_{\text{\faLock} } }}
+  | \ x : t , m    ::  :: Lam    (+ bind x in m +)
+
+normal_beta, m :: 'b_norm_' ::=
+  | u              ::  :: Neutral {{ com a neutral term is beta normal }}
+  | quote p        ::  :: Quote   {{ tex [ [[p]] ]_{\text{\faLock} } }}
+  | \ x : t , m    ::  :: Lam     (+ bind x in m +)
+
+normal_gamma, p :: 'g_norm_' ::=
+  | x              ::  :: Var
+  | \ x : t , p    ::  :: Lam    (+ bind x in p +) 
+  | p1 p2          ::  :: App
+  | quote p        ::  :: Quote  {{ tex [ [[p]] ]_{\text{\faLock} } }}
+  | splice u       ::  :: Splice {{ tex [ [[u]] ]_{\text{\faUnlock} } }}
+
+neutral, u :: 'u_norm_' ::=
+  | x              ::  :: Var
+  | u m            ::  :: App
+  | splice u       ::  :: Splice {{ tex [ [[u]] ]_{\text{\faUnlock} } }}
 
 formula :: 'formula_' ::=
   | judgement  ::  :: judgement
@@ -108,9 +135,9 @@ defn C ctx ::  ::ctx_form::''
   --------- :: ctx_emp
   empty ctx
 
-  % don't need C ctx as C |- t : univ n implicitly carries the fact that C is 
+  % don't need C ctx as C |- t : univ i implicitly carries the fact that C is 
   % well-formed
-  C |- t : univ n
+  C |- t : univ i
   --------------- :: ctx_var
   C, x:t ctx
 
@@ -123,24 +150,24 @@ defn C |- t1 : t2 ::  ::type_of_term::''
 
   C ctx
   ----------------------- :: univ_form
-  C |- univ n : univ s n
+  C |- univ i : univ s i
 
   C ctx
   ----------------- :: nat_form
-  C |- nat : univ n
+  C |- nat : univ i
 
-  C |- t : univ n
-  C , x : t |- t' : univ n
+  C |- t : univ i
+  C , x : t |- t' : univ i
   --------------------------- :: pi_form
-  C |- pi x : t, t' : univ n
+  C |- pi x : t, t' : univ i
 
-  C, lock |- t : univ n
+  C, lock |- t : univ i
   --------------------- :: box_form
-  C |- box t : univ n
+  C |- box t : univ i
 
-  C |- t : univ n
+  C |- t : univ i
   ------------------ :: univ_cumul
-  C |- t : univ s n
+  C |- t : univ s i
 
   C ctx
   --------------- :: nat_zero
@@ -150,7 +177,7 @@ defn C |- t1 : t2 ::  ::type_of_term::''
   ----------------- :: nat_succ
   C |- succ t : nat
 
-  C, x : nat |- t : univ n
+  C, x : nat |- t : univ i
   C |- tk : nat
   C |- tz : t [zero / x]
   C, x : nat, y : t |- ts : t [succ x / x]
@@ -162,12 +189,12 @@ defn C |- t1 : t2 ::  ::type_of_term::''
   ---------- :: term_var
   C |- x : t
 
-  C |- t : univ n
+  C |- t : univ i
   C, x : t |- t1 : t'
   ------------------------------ :: pi_intro
   C |- \x : t, t1 : pi x : t, t'
 
-  C, x : t |- t' : univ n 
+  C, x : t |- t' : univ i 
   C |- t2 : pi x : t, t'
   C |- t1 : t
   ----------------------- :: pi_elim
@@ -177,8 +204,39 @@ defn C |- t1 : t2 ::  ::type_of_term::''
   --------------------- :: box_intro
   C |- quote t1 : box t
 
-  C |- t : univ n
+  C |- t : univ i
   unlock C |- t1 : box t
   ---------------------- :: box_elim
   C |- splice t1 : t
+
+defn t1 --> R t2 ::  ::reduce::''
+{{ com $[[t1]]$ $[[R]]$-reduces to $[[t2]]$ }}
+{{ tex [[t1]] \Longrightarrow_{[[R]]} [[t2]] }} by
+
+  ------------------------------ :: pi_redex
+  (\ x : t, t1) t2 --> beta t1[t2/x]
+
+  t1 --> R t2
+  ---------------------- :: lam_cong
+  \ x : t, t1 --> R \ x : t, t2
+
+  t1 --> R t2
+  ------------------ :: app_cong_L
+  t1 t3 --> R t2 t3
+
+  t1 --> R t2
+  ------------------ :: app_cong_R
+  t3 t1 --> R t3 t2
+
+  --------------------- :: box_redex
+  splice (quote t1) --> R t1
+
+  t1 --> gamma t2
+  ----------------------- :: quote_cong
+  quote t1 --> R quote t2
+
+  t1 --> beta t2
+  ---------------------- :: splice_cong
+  splice t1 --> R splice t2
+% defn t gamma_normal
 % END: judgement definitions
