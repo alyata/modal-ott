@@ -8,9 +8,9 @@ embed
 
 % term variables, represented by x in the grammar, are to be represented using
 % natural numbers in Coq
-metavar termvar, x, y ::= {{ coq nat }} {{ coq-equality }}
+metavar termvar, x, y, v, w ::= {{ coq nat }} {{ coq-equality }}
 
-indexvar index, k, z, s ::= {{ coq nat }}
+indexvar index, k, z, s, A, B, P, a, b, r ::= {{ coq nat }}
 
 % BEGIN: grammar definitions
 grammar
@@ -29,8 +29,9 @@ terminals :: 'terminals_' ::=
   | nat                 ::   :: nat        {{ tex \mathbb{N} }}
   | beta                ::   :: beta       {{ tex \beta }}
   | gamma               ::   :: gamma      {{ tex \gamma }}
+  | eq                  ::   :: eq         {{ tex = }}
 
-i :: 'nat_' ::=
+nat, i :: 'nat_' ::=
 {{ coq (nat) }}
   | 0                   ::   :: zero {{ coq 0 }}
   | s i                 ::   :: succ {{ tex [[i]] + 1 }}
@@ -38,28 +39,54 @@ i :: 'nat_' ::=
 
 term, t :: 't_' ::=
   % constructions that are properly 'term'
-  | x              ::  :: Var    {{ com variables }}
-  | zero           ::  :: Zero   {{ com natural number 0 }}
-  | succ t         ::  :: Succ   {{ com successor of natural number t }}
-  | rec t tk tz ts ::  :: Rec    {{ com (dependent) recursor for natural 
-                                    numbers }}
-  | \ x : t , t'   ::  :: Lam    (+ bind x in t' +) 
-                                 {{ com lambda abstraction}}
-  | t t'           ::  :: App    {{ com function application }}
-  | quote t        ::  :: Quote  {{ com quote term $[[t]]$ as code }}
-                                 {{ tex [ [[t]] ]_{\text{\faLock} } }}
-  | splice t       ::  :: Splice {{ com splice code t as term }}
-                                 {{ tex [ [[t]] ]_{\text{\faUnlock} } }}
+  | x               ::  :: Var    
+    {{ com variables }}
+  | zero            ::  :: Zero   
+    {{ com natural number 0 }}
+  | succ t          ::  :: Succ   
+    {{ com successor of natural number t }}
+  | rec x v tP t tz ts  ::  :: Rec
+    (+ bind x in tP +) (+ bind x union v in ts +)
+    {{ com (dependent) recursor for natural numbers }}
+    {{ tex \mathbf{rec}([[x]].[[tP]], [[t]], [[tz]], [[x]].[[v]].[[ts]]) }}
+  | \ x : tA , t    ::  :: Lam    
+    (+ bind x in t +)
+    {{ com lambda abstraction }}
+  | t t'            ::  :: App    
+    {{ com function application }}
+  | quote t         ::  :: Quote  
+    {{ com quote term $[[t]]$ as code }}
+    {{ tex [ [[t]] ]_{\text{\faLock} } }}
+  | splice t        ::  :: Splice 
+    {{ com splice code t as term }}
+    {{ tex [ [[t]] ]_{\text{\faUnlock} } }}
+  | refl t          ::  :: Refl
+    {{ com constructor for t = t }}
+    {{ tex \mathbf{refl}_{[[t]]} }}
+  | J x y w v tP ta tb t tr ::  :: PathI
+    (+ bind x union y union w in tP +) (+ bind v in tr +)
+    {{ com path induction for equality }}
+    {{ tex \mathbf{J}([[x]].[[y]].[[w]].[[tP]], [[ta]], [[tb]], [[t]], 
+           [[v]].[[tr]]) }}
   % type constructions
-  | nat            ::  :: Nat    {{ com natural number type }}
-  | pi x : t , t'  ::  :: Fun    (+ bind x in t' +)
-                                 {{ com dependent function type }}
-  | box t          ::  :: Box    {{ com terms of $[[t]]$ as code }}
-  | univ i         ::  :: Univ   {{ com type universe }}
-                                 {{ tex \mathcal{U}_{[[i]]} }}
+  | nat             ::  :: Nat
+    {{ com natural number type }}
+  | pi x : tA , tB  ::  :: Fun
+    (+ bind x in tB +)
+    {{ com dependent function type }}
+  | box t           ::  :: Box
+    {{ com terms of $[[t]]$ as code }}
+  | t eq tA t'      ::  :: Eq
+    {{ com propositional equality }}
+    {{ tex [[t]] =_{[[tA]]} [[t']] }}
+  | univ i          ::  :: Univ
+    {{ com type universe }}
+    {{ tex \mathcal{U}_{[[i]]} }}
   % sugaring and substitution
-  | ( t )          :: S:: Par    {{ coq [[t]] }}
-  | t1 [ t2 / x ]  :: M:: Sub    {{ coq (subst_term_in_term [[t2]] [[x]] [[t1]])}}
+  | ( t )          :: S:: Par
+    {{ coq [[t]] }}
+  | t [ x1 := t1 , .. , xk := tk ]   :: M:: Sub
+    {{ coq (subst_term [[x1 t1 .. xk tk]] [[t]])}}
 
 context, C {{ tex \Gamma }} :: 'C_' ::=
 {{ coq (list (option (termvar*term))) }}
@@ -121,7 +148,7 @@ Definition C_unlock (C : context) := filter is_var C.
 
 % BEGIN: substitutions
 substitutions
-  single t x :: subst_term_in%_term
+  multiple t x :: subst%_term
 
 % END: substitutions
 
@@ -137,8 +164,8 @@ defn C ctx ::  ::ctx_form::''
 
   % don't need C ctx as C |- t : univ i implicitly carries the fact that C is 
   % well-formed
-  C |- t : univ i
-  --------------- :: ctx_var
+  C |- tA : univ i
+  ---------------- :: ctx_var
   C, x:t ctx
 
   C ctx
@@ -149,25 +176,25 @@ defn C |- t1 : t2 ::  ::type_of_term::''
 {{ com $[[t1]]$ has type $[[t2]]$ under context $[[C]]$ }} by
 
   C ctx
-  ----------------------- :: univ_form
+  ------------------------ :: univ_form
   C |- univ i : univ s i
 
   C ctx
   ----------------- :: nat_form
   C |- nat : univ i
 
-  C |- t : univ i
-  C , x : t |- t' : univ i
-  --------------------------- :: pi_form
-  C |- pi x : t, t' : univ i
+  C |- tA : univ i
+  C , x : tA |- tB : univ i
+  ---------------------------- :: pi_form
+  C |- pi x : tA, tB : univ i
 
-  C, lock |- t : univ i
+  C, lock |- tA : univ i
   --------------------- :: box_form
-  C |- box t : univ i
+  C |- box tA : univ i
 
-  C |- t : univ i
-  ------------------ :: univ_cumul
-  C |- t : univ s i
+  C |- tA : univ i
+  ------------------- :: univ_cumul
+  C |- tA : univ s i
 
   C ctx
   --------------- :: nat_zero
@@ -177,66 +204,149 @@ defn C |- t1 : t2 ::  ::type_of_term::''
   ----------------- :: nat_succ
   C |- succ t : nat
 
-  C, x : nat |- t : univ i
-  C |- tk : nat
-  C |- tz : t [zero / x]
-  C, x : nat, y : t |- ts : t [succ x / x]
-  ---------------------------------------- :: nat_elim
-  C |- rec t tk tz ts : t[t1 / x]
+  C, x : nat |- tP : univ i
+  C |- t : nat
+  C |- tz : tP [x := zero]
+  C, x : nat, v : tP |- ts : tP[x := succ x]
+  ------------------------------------------- :: nat_elim
+  C |- rec x v tP t tz ts : tP[x := t]
 
   C ctx
-  x : t in C
-  ---------- :: term_var
-  C |- x : t
+  x : tA in C
+  ----------- :: term_var
+  C |- x : tA
 
-  C |- t : univ i
-  C, x : t |- t1 : t'
-  ------------------------------ :: pi_intro
-  C |- \x : t, t1 : pi x : t, t'
+  C |- tA : univ i
+  C, x : tA |- t : tB
+  ------------------------------- :: pi_intro
+  C |- \x : tA, t : pi x : tA, tB
 
-  C, x : t |- t' : univ i 
-  C |- t2 : pi x : t, t'
-  C |- t1 : t
-  ----------------------- :: pi_elim
-  C |- t2 t1 : t'
+  C, x : tA |- tB : univ i 
+  C |- t1 : pi x : tA, tB
+  C |- t2 : tA
+  ------------------------ :: pi_elim
+  C |- t1 t2 : tB[x := t2]
 
-  C, lock |- t1 : t
-  --------------------- :: box_intro
-  C |- quote t1 : box t
+  C, lock |- t1 : tA
+  ---------------------- :: box_intro
+  C |- quote t1 : box tA
 
-  C |- t : univ i
-  unlock C |- t1 : box t
-  ---------------------- :: box_elim
-  C |- splice t1 : t
+  C |- tA : univ i
+  unlock C |- t : box tA
+  ----------------------- :: box_elim
+  C |- splice t : tA
+
+  C |- tA : univ i
+  C |- t1 : tA
+  C |- t2 : tA
+  ------------------------- :: eq_form
+  C |- t1 eq tA t2 : univ i
+
+  C |- tA : univ i
+  C |- t : tA
+  ------------------------ :: eq_intro
+  C |- refl t : t eq tA t
+
+  C, x : tA, y : tA, w : x eq tA y |- tP : univ i
+  C |- ta : tA
+  C |- tb : tA
+  C |- t : ta eq tA tb
+  C, v : tA |- tr : tP[x := v, y := v, w := refl v]
+  ----------------------------------------------------------- :: eq_elim
+  C |- J x y w v tP ta tb t tr : tP[x := ta, y := tb, w := t]
 
 defn t1 --> R t2 ::  ::reduce::''
 {{ com $[[t1]]$ $[[R]]$-reduces to $[[t2]]$ }}
 {{ tex [[t1]] \Longrightarrow_{[[R]]} [[t2]] }} by
 
-  ------------------------------ :: pi_redex
-  (\ x : t, t1) t2 --> beta t1[t2/x]
+  ------------------------------------- :: pi_redex
+  (\ x : tA, t1) t2 --> beta t1[x := t2]
 
-  t1 --> R t2
-  ---------------------- :: lam_cong
-  \ x : t, t1 --> R \ x : t, t2
-
-  t1 --> R t2
-  ------------------ :: app_cong_L
-  t1 t3 --> R t2 t3
-
-  t1 --> R t2
-  ------------------ :: app_cong_R
-  t3 t1 --> R t3 t2
-
-  --------------------- :: box_redex
+  -------------------------- :: box_redex
   splice (quote t1) --> R t1
 
-  t1 --> gamma t2
-  ----------------------- :: quote_cong
-  quote t1 --> R quote t2
+  --------------------------------- :: nat_redex_zero
+  rec x v tP zero tz ts --> beta tz
 
-  t1 --> beta t2
-  ---------------------- :: splice_cong
-  splice t1 --> R splice t2
-% defn t gamma_normal
+  ------------------------------------------------------------------------- :: nat_redex_succ
+  rec x v tP (succ tk) tz ts --> beta ts[x := tk, v := rec x v tP tk tz ts]
+
+  --------------------------------------------------------- :: eq_redex
+  J x y w v tP ta ta (refl ta) tr --> beta tr[v := ta]
+
+  t --> R t'
+  ------------------------------- :: lam_cong
+  \ x : tA, t --> R \ x : tA, t'
+
+  t1 --> R t1'
+  ------------------ :: app_cong_L
+  t1 t2 --> R t1' t2
+
+  t2 --> R t2'
+  ------------------ :: app_cong_R
+  t1 t2 --> R t1 t2'
+
+  t --> gamma t'
+  ----------------------- :: quote_cong
+  quote t --> R quote t'
+
+  t --> beta t'
+  -------------------------- :: splice_cong
+  splice t --> R splice t'
+
+  t --> R t'
+  ------------------ :: succ_cong
+  succ t --> R succ t'
+
+  tP --> R tP'
+  -------------------------------------------- :: rec_cong_1
+  rec x v tP t tz ts --> R rec x v tP' t tz ts
+
+  t --> R t'
+  -------------------------------------------- :: rec_cong_2
+  rec x v tP t tz ts --> R rec x v tP t' tz ts
+
+  tz --> R tz'
+  -------------------------------------------- :: rec_cong_3
+  rec x v tP t tz ts --> R rec x v tP t tz' ts
+
+  ts --> R ts'
+  -------------------------------------------- :: rec_cong_4
+  rec x v tP t tz ts --> R rec x v tP t tz ts'
+
+  ta --> R ta'
+  ------------------------------- :: eq_cong_1
+  ta eq tA tb --> R ta' eq tA tb
+
+  tA --> R tA'
+  ------------------------------- :: eq_cong_2
+  ta eq tA tb --> R ta eq tA' tb
+
+  tb --> R tb'
+  ------------------------------- :: eq_cong_3
+  ta eq tA tb --> R ta eq tA tb'
+
+  ta --> R ta'
+  ---------------------- :: refl_cong
+  refl ta --> R refl ta'
+
+  tP --> R tP'
+  -------------------------------------- :: J_cong_1
+  J x y w v tP ta tb t tr --> R J x y w v tP' ta tb t tr
+
+  ta --> R ta'
+  -------------------------------------- :: J_cong_2
+  J x y w v tP ta tb t tr --> R J x y w v tP ta' tb t tr
+
+  tb --> R tb'
+  -------------------------------------- :: J_cong_3
+  J x y w v tP ta tb t tr --> R J x y w v tP ta tb' t tr
+
+  t --> R t'
+  -------------------------------------- :: J_cong_4
+  J x y w v tP ta tb t tr --> R J x y w v tP ta tb t' tr
+
+  tr --> R tr'
+  -------------------------------------- :: J_cong_5
+  J x y w v tP ta tb t tr --> R J x y w v tP ta tb t tr'
 % END: judgement definitions
