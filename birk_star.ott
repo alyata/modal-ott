@@ -31,7 +31,7 @@ terminals :: 'terminals_' ::=
   | gamma               ::   :: gamma      {{ tex \gamma }}
   | eq                  ::   :: eq         {{ tex = }}
 
-nat, i :: 'nat_' ::=
+i :: 'nat_' ::=
 {{ coq (nat) }}
   | 0                   ::   :: zero {{ coq 0 }}
   | s i                 ::   :: succ {{ tex [[i]] + 1 }}
@@ -90,11 +90,16 @@ term, t :: 't_' ::=
 
 context, C {{ tex \Gamma }} :: 'C_' ::=
 {{ coq (list (option (termvar*term))) }}
-  | empty        ::  :: Emp      {{ coq C_nil }}
-  | C , x : t    ::  :: ConsVar  {{ coq (cons (C_var ([[x]], [[t]])) [[C]]) }}
-  | C , lock     ::  :: ConsLock {{ coq (cons C_lock [[C]]) }}
-  | unlock C     :: M:: Unlock   {{ coq (C_unlock [[C]]) }} 
-                                 {{ tex {[[C]]}^{ \text{\faUnlock} } }}
+  | empty        ::  :: Emp
+    {{ coq C_nil }}
+  | C , x : t    ::  :: ConsVar
+    (+ bind x in C +) % prevent the x from being substituted
+    {{ coq (cons (C_var ([[x]], [[t]])) [[C]]) }}
+  | C , lock     ::  :: ConsLock
+    {{ coq (cons C_lock [[C]]) }}
+  | unlock C     :: M:: Unlock
+    {{ coq (C_unlock [[C]]) }} 
+    {{ tex {[[C]]}^{ \text{\faUnlock} } }}
 
 reduction_strat, R :: 'R_' ::=
   | beta     ::  :: Beta
@@ -122,10 +127,17 @@ neutral, u :: 'u_norm_' ::=
   | splice u       ::  :: Splice {{ tex [ [[u]] ]_{\text{\faUnlock} } }}
 
 formula :: 'formula_' ::=
-  | judgement  ::  :: judgement
-  | x : t in C ::  :: in {{ coq (C_in [[x]] [[t]] [[C]]) }}
-                         {{ tex \Gamma = \Gamma_1, [[x]] : [[t]], \Gamma_2 
-                            \text{ and } \text{\faLock} \not\in \Gamma_2 }}
+  | judgement   ::  :: judgement
+  | x : tA in C ::  :: in {{ coq (C_in [[x]] [[tA]] [[C]]) }}
+                          {{ tex [[C]] = \Gamma_1, [[x]] : [[tA]], \Gamma_2 
+                             \text{ and } \text{\faLock} \not\in \Gamma_2 }}
+  | x nin C     ::  :: nin {{ tex [[x]] \not\in [[C]] }}
+                           {{ coq  (C_var_nin [[x]] [[C]]) }}
+
+% BEGIN: substitutions
+substitutions
+  multiple t x :: subst%_term
+% END: substitutions                
 
 embed
 {{ coq
@@ -137,20 +149,22 @@ Definition C_in (x : termvar) (T : term) (C : context) :=
     (C = List.app C1 (List.cons (Some (x,T)) C2)) /\
     (~ exists T', In (Some (x, T')) C1) /\
     (~ In C_lock C1).
+Definition C_var_nin (x : termvar) (C : context) :=
+  forall T, ~ (In (Some (x,T)) C).
 Definition is_var {A : Type} (o : option A) :=
   match o with
   | C_lock   => false
   | C_var _  => true
   end.
 Definition C_unlock (C : context) := filter is_var C.
+Fixpoint subst_context (sub:list (termvar*term)) (C : context) : context :=
+  match C with
+  | nil => nil
+  | cons C_lock C => cons C_lock (subst_context sub C)
+  | cons (C_var (x, T)) C => cons (C_var (x, subst_term sub T)) (subst_context sub C)
+  end.
 }}
 % END: grammar definitions
-
-% BEGIN: substitutions
-substitutions
-  multiple t x :: subst%_term
-
-% END: substitutions
 
 % BEGIN: judgement definitions - typing, reduction etc.
 defns
@@ -162,11 +176,12 @@ defn C ctx ::  ::ctx_form::''
   --------- :: ctx_emp
   empty ctx
 
-  % don't need C ctx as C |- t : univ i implicitly carries the fact that C is 
-  % well-formed
+  % we can prove that C |- tA : univ i implies C ctx, so we don't need to
+  % explicitly require this.
+  x nin C
   C |- tA : univ i
   ---------------- :: ctx_var
-  C, x:t ctx
+  C, x : tA ctx
 
   C ctx
   ----------- :: ctx_lock
@@ -216,7 +231,7 @@ defn C |- t1 : t2 ::  ::type_of_term::''
   ----------- :: term_var
   C |- x : tA
 
-  C |- tA : univ i
+  % C |- tA : univ i
   C, x : tA |- t : tB
   ------------------------------- :: pi_intro
   C |- \x : tA, t : pi x : tA, tB
@@ -231,6 +246,11 @@ defn C |- t1 : t2 ::  ::type_of_term::''
   ---------------------- :: box_intro
   C |- quote t1 : box tA
 
+  % we need to explicitly have C |- tA : univ i because otherwise we need to
+  % have (unlock C ctx) implies (C ctx) when showing that any typing judgement 
+  % C |- t : tA implies (C ctx). This is simply not true: counterexample:
+  % C = x : univ i, lock, y : (pi z : x, x) is not a well-formed context, but it
+  % is when unlocked. 
   C |- tA : univ i
   unlock C |- t : box tA
   ----------------------- :: box_elim

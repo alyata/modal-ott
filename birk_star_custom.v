@@ -23,7 +23,9 @@ Context (hC : forall ctx n, type_of_term ctx C (t_Univ n)).
 Lemma example_typing: type_of_term [Some (x', A)] x A.
 Proof.
 apply term_var.
-{ apply (ctx_var _ _ _ 0). apply hA.
+{ apply (ctx_var _ _ _ 0).
+  unfold C_var_nin. simpl. intros T H. apply H.
+  apply hA.
 }
 unfold C_in.
 exists C_nil.
@@ -44,7 +46,10 @@ apply hA.
 apply (pi_intro _ _ _ _ _ 0).
 apply hB.
 apply term_var.
-{ apply (ctx_var _ _ _ 0). apply hB. }
+{ apply (ctx_var _ _ _ 0).
+  unfold C_var_nin. unfold In. simpl. intros T H. destruct H. admit. admit.
+  apply hB.
+}
 unfold C_in.
 exists C_nil.
 exists [Some (x', A)].
@@ -54,7 +59,7 @@ split.
 split.
 { intro. destruct H. exact H. }
 { auto. }
-Qed.
+Admitted.
 
 Lemma axiom_T: type_of_term [] (t_Lam x' (t_Box A) (t_Splice x)) 
                                (t_Fun x' (t_Box A) A).
