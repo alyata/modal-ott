@@ -236,7 +236,7 @@ defn C |- t1 : t2 ::  ::type_of_term::''
   ------------------------------- :: pi_intro
   C |- \x : tA, t : pi x : tA, tB
 
-  C, x : tA |- tB : univ i 
+  % C, x : tA |- tB : univ i 
   C |- t1 : pi x : tA, tB
   C |- t2 : tA
   ------------------------ :: pi_elim
